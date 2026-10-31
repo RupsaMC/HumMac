@@ -1,3 +1,4 @@
+
 module Parser where
 
 import Syntax
@@ -66,26 +67,91 @@ subtractInstruction = do
     optional (char '.')
     return (Print (Subtract right left))
 
+repeatHeader :: ReadP Integer
+repeatHeader = do
+    keyword "Repeat"
+    count <- number
+    keyword "times"
+    optional (char '.')
+    spaces
+    return count
+
+endRepeat :: ReadP ()
+endRepeat = do
+    keyword "End"
+    keyword "repeat"
+    optional (char '.')
+    spaces
+
+parseComplete :: ReadP a -> String -> Maybe a
+parseComplete parser input =
+    case [result | (result, rest) <- readP_to_S (spaces *> parser <* spaces <* eof) input] of
+        [] -> Nothing
+        results -> Just (last results)
+
 parseInstruction :: String -> Either String Instruction
 parseInstruction input =
-    case [result | (result, rest) <- readP_to_S (spaces *> (setInstruction <++ addInstruction <++ multiplyInstruction <++ subtractInstruction) <* spaces <* eof) input] of
-        [] -> Left "Could not parse instruction."
-        results -> Right (last results)
+    case parseComplete
+        (setInstruction <++ addInstruction <++ multiplyInstruction <++ subtractInstruction)
+        input of
+            Nothing -> Left "Could not parse instruction."
+            Just instruction -> Right instruction
+
+parseRepeatHeader :: String -> Maybe Integer
+parseRepeatHeader = parseComplete repeatHeader
+
+isEndRepeat :: String -> Bool
+isEndRepeat line =
+    case parseComplete endRepeat line of
+        Just () -> True
+        Nothing -> False
+
+parseSequence :: [(Int, String)] -> Either String ([Instruction], [(Int, String)])
+parseSequence = go []
+    where
+        go accumulated [] =
+            Right (reverse accumulated, [])
+
+        go accumulated remaining@((lineNumber, line):rest)
+            | isEndRepeat line =
+                Right (reverse accumulated, remaining)
+
+            | Just count <- parseRepeatHeader line = do
+                (body, afterBody) <- parseSequence rest
+
+                case afterBody of
+                    (_, endLine):afterEnd
+                        | isEndRepeat endLine ->
+                            go (Repeat count body : accumulated) afterEnd
+
+                    [] ->
+                        Left ("Line " ++ show lineNumber
+                            ++ ": Repeat block is missing 'End repeat.'")
+
+                    _ ->
+                        Left ("Line " ++ show lineNumber
+                            ++ ": Invalid repeat block.")
+
+            | otherwise =
+                case parseInstruction line of
+                    Left err ->
+                        Left ("Line " ++ show lineNumber ++ ": " ++ err)
+
+                    Right instruction ->
+                        go (instruction : accumulated) rest
 
 parseProgram :: String -> Either String Program
-parseProgram input =
-    mapM parseLine nonEmptyLines
-    where
-        numberedLines =
-            zip [1..] (lines input)
-
+parseProgram input = do
+    let numberedLines = zip [1..] (lines input)
         nonEmptyLines =
             filter (not . all isSpace . snd) numberedLines
 
-        parseLine (lineNumber, line) =
-            case parseInstruction line of
-                Left err ->
-                    Left ("Line " ++ show lineNumber ++ ": " ++ err)
+    (program, remaining) <- parseSequence nonEmptyLines
 
-                Right instruction ->
-                    Right instruction
+    case remaining of
+        [] ->
+            Right program
+
+        (lineNumber, _):_ ->
+            Left ("Line " ++ show lineNumber
+                ++ ": Unexpected 'End repeat.'")

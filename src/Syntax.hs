@@ -14,6 +14,7 @@ data Expression
 data Instruction
     = Assign Variable Expression
     | Print Expression
+    | Repeat Integer [Instruction]
     deriving (Show, Eq)
 
 type Program = [Instruction]

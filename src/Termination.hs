@@ -1,15 +1,16 @@
+
 module Termination where
 
 import Syntax
 
 data TerminationCertificate = TerminationCertificate
-    { instructionCount :: Int
-    , expressionNodeCount :: Int
-    , terminationMeasure :: Int
+    { instructionCount :: Integer
+    , expressionNodeCount :: Integer
+    , terminationMeasure :: Integer
     } deriving (Show, Eq)
 
 -- Count the nodes in an expression tree.
-expressionSize :: Expression -> Int
+expressionSize :: Expression -> Integer
 expressionSize (Number _) = 1
 expressionSize (VariableRef _) = 1
 
@@ -25,25 +26,59 @@ expressionSize (Multiply left right) =
 expressionSize (Divide left right) =
     1 + expressionSize left + expressionSize right
 
--- Count the size of each instruction.
-instructionSize :: Instruction -> Int
-instructionSize (Assign _ expression) =
-    expressionSize expression
+-- Count instruction executions, including repetitions.
+instructionExecutionCount :: Program -> Integer
+instructionExecutionCount =
+    sum . map instructionExecutions
+    where
+        instructionExecutions (Assign _ _) = 1
 
-instructionSize (Print expression) =
-    expressionSize expression
+        instructionExecutions (Print _) = 1
 
--- Verify that a program belongs to our current
+        instructionExecutions (Repeat count body) =
+            1 + count * instructionExecutionCount body
+
+-- Count expression-node evaluations across all repetitions.
+programExpressionCount :: Program -> Integer
+programExpressionCount =
+    sum . map expressionExecutions
+    where
+        expressionExecutions (Assign _ expression) =
+            expressionSize expression
+
+        expressionExecutions (Print expression) =
+            expressionSize expression
+
+        expressionExecutions (Repeat count body) =
+            count * programExpressionCount body
+
+-- Verify that the program belongs to our
 -- structurally terminating language.
 verifyProgram :: Program -> Either String TerminationCertificate
-verifyProgram program =
-    let
-        count = length program
-        nodes = sum (map instructionSize program)
-        measure = count + nodes
-    in
-        Right TerminationCertificate
-            { instructionCount = count
-            , expressionNodeCount = nodes
-            , terminationMeasure = measure
-            }
+verifyProgram program
+    | not (allBoundsValid program) =
+        Left "Negative repetition bounds are not permitted."
+
+    | otherwise =
+        let
+            count = instructionExecutionCount program
+            nodes = programExpressionCount program
+            measure = count + nodes
+        in
+            Right TerminationCertificate
+                { instructionCount = count
+                , expressionNodeCount = nodes
+                , terminationMeasure = measure
+                }
+
+-- Check repetition bounds recursively.
+allBoundsValid :: Program -> Bool
+allBoundsValid =
+    all validInstruction
+    where
+        validInstruction (Assign _ _) = True
+
+        validInstruction (Print _) = True
+
+        validInstruction (Repeat count body) =
+            count >= 0 && allBoundsValid body

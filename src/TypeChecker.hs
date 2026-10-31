@@ -1,3 +1,4 @@
+
 module TypeChecker where
 
 import Syntax
@@ -41,3 +42,10 @@ validateProgram = go []
                 Print expression -> do
                     validateExpression defined expression
                     go defined rest
+
+                Repeat _ body -> do
+                    validateProgramWith defined body
+                    go defined rest
+
+        validateProgramWith defined body =
+            go defined body
