@@ -1,6 +1,7 @@
 module Main where
 
 import Compiler
+import qualified Evaluator as Eval
 import InitializationAnalysis
     ( InitializationError(..)
     , analyzeInitialization
@@ -147,6 +148,186 @@ contains needle haystack =
 
         tails [] = [[]]
         tails value@(_:rest) = value : tails rest
+
+testConditionals :: IO ()
+testConditionals = do
+    assertEqual "If with Otherwise"
+        (Right
+            [ If
+                (Compare GreaterThan (Number 10) (Number 5))
+                [Assign "x" (Number 1)]
+                [Assign "x" (Number 0)]
+            ])
+        (parseProgram
+            "If 10 is greater than 5.\n\
+            \Set x to 1.\n\
+            \Otherwise.\n\
+            \Set x to 0.\n\
+            \End if.\n")
+
+    assertEqual "If without Otherwise"
+        (Right
+            [ If
+                (Compare EqualTo (Number 1) (Number 1))
+                [Assign "x" (Number 1)]
+                []
+            ])
+        (parseProgram
+            "If 1 is equal to 1.\n\
+            \Set x to 1.\n\
+            \End if.\n")
+
+    assertEqual "Nested conditionals inside repetition"
+        (Right
+            [ Repeat 2
+                [ If
+                    (Compare LessThanOrEqualTo
+                        (VariableRef "x") (Number 5))
+                    [ If
+                        (Compare NotEqualTo
+                            (VariableRef "x") (Number 0))
+                        [Assign "y" (Number 1)]
+                        []
+                    ]
+                    [Assign "y" (Number 0)]
+                ]
+            ])
+        (parseProgram
+            "Repeat 2 times.\n\
+            \If x is less than or equal to 5.\n\
+            \If x is not equal to 0.\n\
+            \Set y to 1.\n\
+            \End if.\n\
+            \Otherwise.\n\
+            \Set y to 0.\n\
+            \End if.\n\
+            \End repeat.\n")
+
+    assertEqual "Equal comparison operator"
+        (Right
+            [If (Compare EqualTo (Number 1) (Number 2))
+                [Assign "x" (Number 1)] []])
+        (parseProgram "If 1 is equal to 2.\nSet x to 1.\nEnd if.\n")
+
+    assertEqual "Not-equal comparison operator"
+        (Right
+            [If (Compare NotEqualTo (Number 1) (Number 2))
+                [Assign "x" (Number 1)] []])
+        (parseProgram "If 1 is not equal to 2.\nSet x to 1.\nEnd if.\n")
+
+    assertEqual "Less-than comparison operator"
+        (Right
+            [If (Compare LessThan (Number 1) (Number 2))
+                [Assign "x" (Number 1)] []])
+        (parseProgram "If 1 is less than 2.\nSet x to 1.\nEnd if.\n")
+
+    assertEqual "Greater-than comparison operator"
+        (Right
+            [If (Compare GreaterThan (Number 2) (Number 1))
+                [Assign "x" (Number 1)] []])
+        (parseProgram "If 2 is greater than 1.\nSet x to 1.\nEnd if.\n")
+
+    assertEqual "Less-than-or-equal comparison operator"
+        (Right
+            [If (Compare LessThanOrEqualTo (Number 1) (Number 2))
+                [Assign "x" (Number 1)] []])
+        (parseProgram "If 1 is less than or equal to 2.\nSet x to 1.\nEnd if.\n")
+
+    assertEqual "Greater-than-or-equal comparison operator"
+        (Right
+            [If (Compare GreaterThanOrEqualTo (Number 2) (Number 1))
+                [Assign "x" (Number 1)] []])
+        (parseProgram "If 2 is greater than or equal to 1.\nSet x to 1.\nEnd if.\n")
+
+    assert "Missing End if rejected"
+        (case parseProgram "If 1 is equal to 1.\nSet x to 1.\n" of
+            Left message -> "missing" `contains` message
+            Right _ -> False)
+
+    assert "Unmatched End if rejected"
+        (case parseProgram "End if.\n" of
+            Left message -> "Unexpected" `contains` message
+            Right _ -> False)
+
+    assert "Unmatched Otherwise rejected"
+        (case parseProgram "Otherwise.\n" of
+            Left message -> "Unexpected" `contains` message
+            Right _ -> False)
+
+
+
+testConditionalEvaluation :: IO ()
+testConditionalEvaluation = do
+    assertEqual "Runtime equality comparison"
+        (Right True)
+        (Eval.evalProposition []
+            (Compare EqualTo (Number 2) (Number 2)))
+
+    assertEqual "Runtime not-equal comparison"
+        (Right True)
+        (Eval.evalProposition []
+            (Compare NotEqualTo (Number 2) (Number 3)))
+
+    assertEqual "Runtime less-than comparison"
+        (Right True)
+        (Eval.evalProposition []
+            (Compare LessThan (Number 2) (Number 3)))
+
+    assertEqual "Runtime greater-than comparison"
+        (Right True)
+        (Eval.evalProposition []
+            (Compare GreaterThan (Number 3) (Number 2)))
+
+    assertEqual "Runtime less-than-or-equal comparison"
+        (Right True)
+        (Eval.evalProposition []
+            (Compare LessThanOrEqualTo (Number 2) (Number 2)))
+
+    assertEqual "Runtime greater-than-or-equal comparison"
+        (Right True)
+        (Eval.evalProposition []
+            (Compare GreaterThanOrEqualTo (Number 3) (Number 2)))
+
+    assertEqual "True condition executes the If branch"
+        (Right ([("result", 1)], []))
+        (Eval.evalProgram
+            [ If
+                (Compare GreaterThan (Number 2) (Number 1))
+                [Assign "result" (Number 1)]
+                [Assign "result" (Number 2)]
+            ])
+
+    assertEqual "False condition executes the Otherwise branch"
+        (Right ([("result", 2)], []))
+        (Eval.evalProgram
+            [ If
+                (Compare LessThan (Number 2) (Number 1))
+                [Assign "result" (Number 1)]
+                [Assign "result" (Number 2)]
+            ])
+
+    assertEqual "False condition without Otherwise does nothing"
+        (Right ([], []))
+        (Eval.evalProgram
+            [ If
+                (Compare EqualTo (Number 1) (Number 2))
+                [Assign "result" (Number 1)]
+                []
+            ])
+
+    assertEqual "Nested conditionals execute the correct inner branch"
+        (Right ([("result", 2)], []))
+        (Eval.evalProgram
+            [ If
+                (Compare GreaterThan (Number 3) (Number 1))
+                [ If
+                    (Compare EqualTo (Number 3) (Number 2))
+                    [Assign "result" (Number 1)]
+                    [Assign "result" (Number 2)]
+                ]
+                [Assign "result" (Number 3)]
+            ])
+
 
 testCompilation :: IO ()
 testCompilation = do
@@ -472,6 +653,8 @@ main = do
     testExpressions
     testInstructions
     testRepetition
+    testConditionals
+    testConditionalEvaluation
     testCompilation
     testSemanticRules
     testControlFlowTypes

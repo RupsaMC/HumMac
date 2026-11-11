@@ -1,11 +1,8 @@
 -- Copyright 2026 Rupsa Mandal Chakraborty
 -- SPDX-License-Identifier: Apache-2.0
 --
--- Licensed under the Apache License, Version 2.0 (the "License");
--- you may not use this file except in compliance with the License.
--- You may obtain a copy of the License at
---
--- https://www.apache.org/licenses/LICENSE-2.0
+-- Licensed under the Apache License, Version 2.0
+-- See the LICENSE file for details.
 
 module Termination where
 
@@ -40,6 +37,10 @@ expressionSize (Power base powerExpression) =
 expressionSize (Negate operand) =
     1 + expressionSize operand
 
+propositionSize :: Proposition -> Integer
+propositionSize (Compare _ left right) =
+    1 + expressionSize left + expressionSize right
+
 instructionExecutionCount :: Program -> Integer
 instructionExecutionCount =
     sum . map instructionExecutions
@@ -50,6 +51,11 @@ instructionExecutionCount =
 
         instructionExecutions (Repeat count body) =
             1 + count * instructionExecutionCount body
+
+        instructionExecutions (If _ thenBody elseBody) =
+            1 + max
+                (instructionExecutionCount thenBody)
+                (instructionExecutionCount elseBody)
 
 programExpressionCount :: Program -> Integer
 programExpressionCount =
@@ -63,6 +69,12 @@ programExpressionCount =
 
         expressionExecutions (Repeat count body) =
             count * programExpressionCount body
+
+        expressionExecutions (If proposition thenBody elseBody) =
+            propositionSize proposition
+                + max
+                    (programExpressionCount thenBody)
+                    (programExpressionCount elseBody)
 
 verifyProgram :: Program -> Either String TerminationCertificate
 verifyProgram program
@@ -91,3 +103,6 @@ allBoundsValid =
 
         validInstruction (Repeat count body) =
             count >= 0 && allBoundsValid body
+
+        validInstruction (If _ thenBody elseBody) =
+            allBoundsValid thenBody && allBoundsValid elseBody

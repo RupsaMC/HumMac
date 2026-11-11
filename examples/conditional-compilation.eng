@@ -1,0 +1,15 @@
+Set x to 10.
+
+If x is greater than 5.
+    Set result to 1.
+Otherwise.
+    Set result to 0.
+End if.
+
+If result is equal to 1.
+    Set final to 100.
+Otherwise.
+    Set final to 200.
+End if.
+
+Add final and 0.

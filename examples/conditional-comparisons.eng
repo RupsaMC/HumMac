@@ -1,0 +1,30 @@
+If 1 is equal to 1.
+    Set a to 1.
+Otherwise.
+    Set a to 0.
+End if.
+If 1 is not equal to 2.
+    Set b to 1.
+Otherwise.
+    Set b to 0.
+End if.
+If 1 is less than 2.
+    Set c to 1.
+Otherwise.
+    Set c to 0.
+End if.
+If 2 is greater than 1.
+    Set d to 1.
+Otherwise.
+    Set d to 0.
+End if.
+If 1 is less than or equal to 2.
+    Set e to 1.
+Otherwise.
+    Set e to 0.
+End if.
+If 2 is greater than or equal to 1.
+    Set f to 1.
+Otherwise.
+    Set f to 0.
+End if.

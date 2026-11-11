@@ -39,6 +39,8 @@ reservedWords :: [String]
 reservedWords =
     [ "Set", "Add", "Multiply", "Subtract"
     , "Repeat", "End", "repeat"
+    , "If", "Otherwise", "if"
+    , "is", "equal", "not", "less", "greater", "than", "or"
     , "to", "and", "by", "from", "times"
     ]
 
@@ -194,6 +196,58 @@ endRepeat = do
     optional (char '.')
     spaces
 
+endIf :: ReadP ()
+endIf = do
+    keyword "End"
+    keyword "if"
+    optional (char '.')
+    spaces
+
+otherwiseHeader :: ReadP ()
+otherwiseHeader = do
+    keyword "Otherwise"
+    optional (char '.')
+    spaces
+
+comparisonOperator :: ReadP ComparisonOperator
+comparisonOperator =
+        (do
+            keyword "less"
+            keyword "than"
+            keyword "or"
+            keyword "equal"
+            keyword "to"
+            return LessThanOrEqualTo
+        )
+    <++ (do
+            keyword "greater"
+            keyword "than"
+            keyword "or"
+            keyword "equal"
+            keyword "to"
+            return GreaterThanOrEqualTo
+        )
+    <++ (do
+            keyword "not"
+            keyword "equal"
+            keyword "to"
+            return NotEqualTo
+        )
+    <++ (keyword "equal" >> keyword "to" >> return EqualTo)
+    <++ (keyword "less" >> keyword "than" >> return LessThan)
+    <++ (keyword "greater" >> keyword "than" >> return GreaterThan)
+
+ifHeader :: ReadP Proposition
+ifHeader = do
+    keyword "If"
+    left <- expression
+    keyword "is"
+    operator <- comparisonOperator
+    right <- expression
+    optional (char '.')
+    spaces
+    return (Compare operator left right)
+
 parseComplete :: ReadP a -> String -> Maybe a
 parseComplete parser input =
     case
@@ -279,11 +333,27 @@ isDecimalNumber token =
 isEndRepeat :: String -> Bool
 isEndRepeat line =
     case parseComplete endRepeat line of
-        Just () ->
-            True
+        Just () -> True
+        Nothing -> False
 
-        Nothing ->
-            False
+isEndIf :: String -> Bool
+isEndIf line =
+    case parseComplete endIf line of
+        Just () -> True
+        Nothing -> False
+
+isOtherwise :: String -> Bool
+isOtherwise line =
+    case parseComplete otherwiseHeader line of
+        Just () -> True
+        Nothing -> False
+
+isBlockTerminator :: String -> Bool
+isBlockTerminator line =
+    isEndRepeat line || isEndIf line || isOtherwise line
+
+parseIfHeader :: String -> Maybe Proposition
+parseIfHeader = parseComplete ifHeader
 
 parseSequence
     :: [(Int, String)]
@@ -294,7 +364,7 @@ parseSequence = go []
             Right (reverse accumulated, [])
 
         go accumulated remaining@((lineNumber, line):rest)
-            | isEndRepeat line =
+            | isBlockTerminator line =
                 Right (reverse accumulated, remaining)
 
             | Just repeatCount <- parseRepeatHeader line = do
@@ -307,21 +377,66 @@ parseSequence = go []
                                 (Repeat repeatCount body : accumulated)
                                 afterEnd
 
+                        | otherwise ->
+                            Left
+                                ("Line " ++ show lineNumber
+                                    ++ ": Repeat block must end with 'End repeat.'")
+
                     [] ->
                         Left
                             ("Line " ++ show lineNumber
                                 ++ ": Repeat block is missing 'End repeat.'")
 
-                    _ ->
+            | Just proposition <- parseIfHeader line = do
+                (thenBody, afterThen) <- parseSequence rest
+
+                case afterThen of
+                    (_, markerLine):afterMarker
+                        | isOtherwise markerLine -> do
+                            (elseBody, afterElse) <-
+                                parseSequence afterMarker
+
+                            case afterElse of
+                                (_, endLine):afterEnd
+                                    | isEndIf endLine ->
+                                        go
+                                            (If proposition thenBody elseBody
+                                                : accumulated)
+                                            afterEnd
+
+                                [] ->
+                                    Left
+                                        ("Line " ++ show lineNumber
+                                            ++ ": If block is missing 'End if.'")
+
+                                (endLineNumber, _):_ ->
+                                    Left
+                                        ("Line " ++ show endLineNumber
+                                            ++ ": Expected 'End if.' after Otherwise branch.")
+
+                        | isEndIf markerLine ->
+                            go
+                                (If proposition thenBody [] : accumulated)
+                                afterMarker
+
+                        | otherwise ->
+                            Left
+                                ("Line " ++ show lineNumber
+                                    ++ ": Invalid If block terminator.")
+
+                    [] ->
                         Left
                             ("Line " ++ show lineNumber
-                                ++ ": Invalid repeat block.")
+                                ++ ": If block is missing 'End if.'")
 
             | isNegativeRepeatHeader line
                 || isDecimalRepeatHeader line =
                 Left
                     ("Line " ++ show lineNumber
                         ++ ": Repeat count must be a non-negative integer.")
+
+            | isEndRepeat line || isEndIf line || isOtherwise line =
+                Right (reverse accumulated, remaining)
 
             | otherwise =
                 case parseInstruction line of
@@ -344,7 +459,11 @@ parseProgram input = do
         [] ->
             Right program
 
-        (lineNumber, _):_ ->
-            Left
+        (lineNumber, line):_ ->
+            let description
+                    | isEndRepeat line = "End repeat."
+                    | isEndIf line = "End if."
+                    | otherwise = "Otherwise."
+            in Left
                 ("Line " ++ show lineNumber
-                    ++ ": Unexpected 'End repeat.'")
+                    ++ ": Unexpected '" ++ description ++ "'")

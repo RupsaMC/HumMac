@@ -14,6 +14,7 @@ module SymbolTable
     , recordRead
     , recordWrite
     , restoreUsageMetadata
+    , mergeUsageMetadata
     ) where
 
 import qualified Data.Map.Strict as Map
@@ -109,3 +110,26 @@ restoreUsageMetadata original updated =
                         { symbolReadBeforeWrite = False
                         , symbolProgramWritten = False
                         }
+
+-- Merge the effects of two alternative branches.
+-- Both flags use disjunction: an effect in either branch must be retained.
+-- The second table contains the complete shared symbol-ID allocation.
+mergeUsageMetadata :: SymbolTable -> SymbolTable -> SymbolTable
+mergeUsageMetadata thenTable elseTable =
+    elseTable
+        { symbols = Map.mapWithKey merge (symbols elseTable) }
+    where
+        merge name elseInfo =
+            case Map.lookup name (symbols thenTable) of
+                Just thenInfo ->
+                    elseInfo
+                        { symbolReadBeforeWrite =
+                            symbolReadBeforeWrite thenInfo
+                            || symbolReadBeforeWrite elseInfo
+                        , symbolProgramWritten =
+                            symbolProgramWritten thenInfo
+                            || symbolProgramWritten elseInfo
+                        }
+
+                Nothing ->
+                    elseInfo

@@ -1,0 +1,17 @@
+Set x to 10.
+If x is greater than 5.
+    If x is equal to 10.
+        Set y to 1.
+    Otherwise.
+        Set y to 2.
+    End if.
+Otherwise.
+    Set y to 3.
+End if.
+Repeat 2 times.
+    If y is greater than or equal to 2.
+        Set z to 1.
+    Otherwise.
+        Set z to 0.
+    End if.
+End repeat.

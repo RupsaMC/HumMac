@@ -70,6 +70,26 @@ convertInstruction (Legacy.Repeat count body) table =
             Core.Constant (Core.IntegerLiteral count)
     in (Core.Repeat countExpression convertedBody, finalTable)
 
+convertInstruction (Legacy.If proposition thenBody elseBody) table =
+    let (convertedCondition, conditionTable) =
+            convertProposition proposition table
+
+        (convertedThen, thenTable) =
+            convertInstructions thenBody conditionTable
+
+        elseBase =
+            restoreUsageMetadata conditionTable thenTable
+
+        (convertedElse, elseTable) =
+            convertInstructions elseBody elseBase
+
+        finalTable =
+            mergeUsageMetadata thenTable elseTable
+    in
+        ( Core.If convertedCondition convertedThen convertedElse
+        , finalTable
+        )
+
 convertExpression
     :: Legacy.Expression
     -> SymbolTable
@@ -106,6 +126,31 @@ convertExpression (Legacy.Negate operand) table =
     let (convertedOperand, table1) =
             convertExpression operand table
     in (Core.Negate convertedOperand, table1)
+
+convertProposition
+    :: Legacy.Proposition
+    -> SymbolTable
+    -> (Core.Proposition, SymbolTable)
+convertProposition (Legacy.Compare operator left right) table =
+    let (convertedLeft, table1) =
+            convertExpression left table
+        (convertedRight, table2) =
+            convertExpression right table1
+        relation =
+            case operator of
+                Legacy.EqualTo ->
+                    Core.Equal convertedLeft convertedRight
+                Legacy.NotEqualTo ->
+                    Core.NotEqual convertedLeft convertedRight
+                Legacy.LessThan ->
+                    Core.LessThan convertedLeft convertedRight
+                Legacy.GreaterThan ->
+                    Core.GreaterThan convertedLeft convertedRight
+                Legacy.LessThanOrEqualTo ->
+                    Core.LessEqual convertedLeft convertedRight
+                Legacy.GreaterThanOrEqualTo ->
+                    Core.GreaterEqual convertedLeft convertedRight
+    in (Core.Compare relation, table2)
 
 convertBinary
     :: (Core.Expr -> Core.Expr -> Core.Expr)

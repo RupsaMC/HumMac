@@ -1,14 +1,10 @@
 -- Copyright 2026 Rupsa Mandal Chakraborty
 -- SPDX-License-Identifier: Apache-2.0
 --
--- Licensed under the Apache License, Version 2.0 (the "License");
--- you may not use this file except in compliance with the License.
--- You may obtain a copy of the License at
---
--- https://www.apache.org/licenses/LICENSE-2.0
+-- Licensed under the Apache License, Version 2.0
+-- See the LICENSE file for details.
 
 module Syntax where
-
 
 type Variable = String
 
@@ -24,10 +20,24 @@ data Expression
     | Negate Expression
     deriving (Show, Eq)
 
+data ComparisonOperator
+    = EqualTo
+    | NotEqualTo
+    | LessThan
+    | GreaterThan
+    | LessThanOrEqualTo
+    | GreaterThanOrEqualTo
+    deriving (Show, Eq)
+
+data Proposition
+    = Compare ComparisonOperator Expression Expression
+    deriving (Show, Eq)
+
 data Instruction
     = Assign Variable Expression
     | Print Expression
     | Repeat Integer [Instruction]
+    | If Proposition [Instruction] [Instruction]
     deriving (Show, Eq)
 
 type Program = [Instruction]

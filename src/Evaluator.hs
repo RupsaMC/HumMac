@@ -63,6 +63,23 @@ evalExpression environment (Negate operand) = do
     value <- evalExpression environment operand
     Right (negate value)
 
+evalProposition
+    :: Environment
+    -> Proposition
+    -> Either String Bool
+
+evalProposition environment (Compare operator left right) = do
+    x <- evalExpression environment left
+    y <- evalExpression environment right
+    Right
+        (case operator of
+            EqualTo -> x == y
+            NotEqualTo -> x /= y
+            LessThan -> x < y
+            GreaterThan -> x > y
+            LessThanOrEqualTo -> x <= y
+            GreaterThanOrEqualTo -> x >= y)
+
 updateEnvironment :: Variable -> Integer -> Environment -> Environment
 updateEnvironment name value environment =
     (name, value) : filter (\(key, _) -> key /= name) environment
@@ -80,6 +97,11 @@ evalInstruction environment (Assign name expression) = do
 evalInstruction environment (Print expression) = do
     value <- evalExpression environment expression
     Right (environment, [value])
+
+evalInstruction environment (If proposition thenBody elseBody) = do
+    condition <- evalProposition environment proposition
+    evalInstructions environment
+        (if condition then thenBody else elseBody)
 
 evalInstruction environment (Repeat count body)
     | count < 0 =
