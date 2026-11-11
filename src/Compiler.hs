@@ -11,17 +11,19 @@ module Compiler
     ) where
 
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 
 import qualified Parser
 import qualified SMIR
 
 import ExpressionInference (FunctionRegistry)
+import InitializationAnalysis
+    ( InitializationError(..)
+    , analyzeInitialization
+    )
 import InstructionAnalysis
 import SymbolTable
 import SyntaxToSMIR (convertProgram)
-
-
--- Result of compiling and semantically analysing a source program.
 
 data CompilationResult = CompilationResult
     { compiledProgram :: SMIR.Program
@@ -30,20 +32,13 @@ data CompilationResult = CompilationResult
     }
     deriving (Show, Eq)
 
-
--- Errors that may occur during compilation.
-
 data CompilationError
     = ParsingFailed String
     | SemanticAnalysisFailed InstructionError
+    | InitializationAnalysisFailed InitializationError
     deriving (Show, Eq)
 
-
--- Parse source, translate it into SMIR, and perform semantic analysis.
--- This function does not execute the resulting program.
-
 compileSource :: String -> Either CompilationError CompilationResult
-
 compileSource source = do
     legacyProgram <-
         either
@@ -59,6 +54,14 @@ compileSource source = do
         functions :: FunctionRegistry
         functions = Map.empty
 
+        runtimeRequiredSymbols =
+            Set.fromList
+                [ symbolId info
+                | info <- getSymbols symbolTable
+                , symbolReadBeforeWrite info
+                , symbolProgramWritten info
+                ]
+
     result <-
         either
             (Left . SemanticAnalysisFailed)
@@ -67,6 +70,15 @@ compileSource source = do
                 1000000
                 Map.empty
                 functions
+                instructions)
+
+    _ <-
+        either
+            (Left . InitializationAnalysisFailed)
+            Right
+            (analyzeInitialization
+                runtimeRequiredSymbols
+                Set.empty
                 instructions)
 
     Right CompilationResult

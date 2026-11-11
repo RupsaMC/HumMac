@@ -47,6 +47,11 @@ main = do
                     print err
                     exitFailure
 
+                Left (InitializationAnalysisFailed err) -> do
+                    putStrLn "Compilation failed during initialization analysis."
+                    print err
+                    exitFailure
+
                 Right result -> do
                     putStrLn "HumMac compilation successful."
 

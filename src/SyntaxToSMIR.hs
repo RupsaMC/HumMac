@@ -45,11 +45,13 @@ convertInstruction (Legacy.Assign name expression) table =
             introduceSymbol name table
         (convertedExpression, table2) =
             convertExpression expression table1
+        table3 =
+            recordWrite (symbolId info) table2
     in
         ( Core.Assign
             (symbolId info)
             (Core.NumericValue convertedExpression)
-        , table2
+        , table3
         )
 
 convertInstruction (Legacy.Print expression) table =
@@ -58,11 +60,15 @@ convertInstruction (Legacy.Print expression) table =
     in (Core.Evaluate convertedExpression, table1)
 
 convertInstruction (Legacy.Repeat count body) table =
-    let (convertedBody, table1) =
+    let (convertedBody, bodyTable) =
             convertInstructions body table
+        finalTable =
+            if count == 0
+                then restoreUsageMetadata table bodyTable
+                else bodyTable
         countExpression =
             Core.Constant (Core.IntegerLiteral count)
-    in (Core.Repeat countExpression convertedBody, table1)
+    in (Core.Repeat countExpression convertedBody, finalTable)
 
 convertExpression
     :: Legacy.Expression
@@ -77,7 +83,9 @@ convertExpression (Legacy.Decimal value) table =
 convertExpression (Legacy.VariableRef name) table =
     let (info, table1) =
             introduceSymbol name table
-    in (Core.Symbol (symbolId info), table1)
+        table2 =
+            recordRead (symbolId info) table1
+    in (Core.Symbol (symbolId info), table2)
 
 convertExpression (Legacy.Add left right) table =
     convertBinary Core.Add left right table

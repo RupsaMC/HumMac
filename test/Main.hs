@@ -179,6 +179,40 @@ testCompilation = do
             _ -> False)
 
 
+testCompilerInitialization :: IO ()
+testCompilerInitialization = do
+
+    assert "Compiler rejects runtime self-reference before initialization"
+        (case compileSource "Set x to x + 1.\n" of
+            Left (InitializationAnalysisFailed
+                (ReadBeforeInitialization (SymbolId 0))) -> True
+            _ -> False)
+
+    assert "Compiler accepts a free mathematical variable"
+        (case compileSource "Add x and 1.\n" of
+            Right _ -> True
+            _ -> False)
+
+    assert "Compiler accepts assignment before subsequent read"
+        (case compileSource
+            "Set x to 1.\nAdd x and 1.\n" of
+            Right _ -> True
+            _ -> False)
+
+    assert "Compiler accepts self-reference inside zero repetition"
+        (case compileSource
+            "Repeat 0 times.\nSet x to x + 1.\nEnd repeat.\n" of
+            Right _ -> True
+            _ -> False)
+
+    assert "Compiler rejects self-reference inside positive repetition"
+        (case compileSource
+            "Repeat 3 times.\nSet x to x + 1.\nEnd repeat.\n" of
+            Left (InitializationAnalysisFailed
+                (ReadBeforeInitialization (SymbolId 0))) -> True
+            _ -> False)
+
+
 testSemanticRules :: IO ()
 testSemanticRules = do
     case compileSource "Set result to 1 + 2.5.\n" of
@@ -289,73 +323,148 @@ testControlFlowTypes = do
 
 testInitializationAnalysis :: IO ()
 testInitializationAnalysis = do
-    assert "Read before initialization rejected"
-        (analyzeInitialization Set.empty
-            [ Core.Evaluate (Core.Symbol (SymbolId 0))]
-            == Left (ReadBeforeInitialization (SymbolId 0)))
+    let symbol = SymbolId 0
+        required = Set.singleton symbol
+        freeSymbols = Set.empty
+        uninitialized = Set.empty
+        initialized = Set.singleton symbol
+
+    assert "Uninitialized runtime symbol read is rejected"
+        (analyzeInitialization required uninitialized
+            [Core.Evaluate (Core.Symbol symbol)]
+            == Left (ReadBeforeInitialization symbol))
+
+    assert "Free mathematical symbol can be read"
+        (analyzeInitialization freeSymbols uninitialized
+            [Core.Evaluate (Core.Symbol symbol)]
+            == Right uninitialized)
 
     assert "Assignment initializes its target"
-        (analyzeInitialization Set.empty
-            [ Core.Assign (SymbolId 0)
+        (analyzeInitialization required uninitialized
+            [ Core.Assign symbol
                 (Core.NumericValue
                     (Core.Constant (Core.IntegerLiteral 5)))
-            , Core.Evaluate (Core.Symbol (SymbolId 0))
+            , Core.Evaluate (Core.Symbol symbol)
             ]
-            == Right (Set.singleton (SymbolId 0)))
+            == Right initialized)
 
-    assert "Self-reference before assignment rejected"
-        (analyzeInitialization Set.empty
-            [ Core.Assign (SymbolId 0)
+    assert "Runtime self-reference before assignment is rejected"
+        (analyzeInitialization required uninitialized
+            [ Core.Assign symbol
                 (Core.NumericValue
                     (Core.Add
-                        (Core.Symbol (SymbolId 0))
+                        (Core.Symbol symbol)
                         (Core.Constant (Core.IntegerLiteral 1))))
             ]
-            == Left (ReadBeforeInitialization (SymbolId 0)))
+            == Left (ReadBeforeInitialization symbol))
+
+    assert "Free symbol can appear in self-referential assignment"
+        (analyzeInitialization freeSymbols uninitialized
+            [ Core.Assign symbol
+                (Core.NumericValue
+                    (Core.Add
+                        (Core.Symbol symbol)
+                        (Core.Constant (Core.IntegerLiteral 1))))
+            ]
+            == Right initialized)
 
     assert "Assignment in both branches initializes symbol"
-        (analyzeInitialization Set.empty
+        (analyzeInitialization required uninitialized
             [ Core.If (Core.BooleanConstant True)
-                [ Core.Assign (SymbolId 0)
+                [ Core.Assign symbol
                     (Core.NumericValue
                         (Core.Constant (Core.IntegerLiteral 1)))
                 ]
-                [ Core.Assign (SymbolId 0)
+                [ Core.Assign symbol
                     (Core.NumericValue
                         (Core.Constant (Core.IntegerLiteral 2)))
                 ]
-            , Core.Evaluate (Core.Symbol (SymbolId 0))
+            , Core.Evaluate (Core.Symbol symbol)
             ]
-            == Right (Set.singleton (SymbolId 0)))
+            == Right initialized)
 
-    assert "Assignment in only one branch does not initialize symbol"
-        (analyzeInitialization Set.empty
+    assert "Assignment in only one branch does not initialize runtime symbol"
+        (analyzeInitialization required uninitialized
             [ Core.If (Core.BooleanConstant True)
-                [ Core.Assign (SymbolId 0)
+                [ Core.Assign symbol
                     (Core.NumericValue
                         (Core.Constant (Core.IntegerLiteral 1)))
                 ]
                 []
-            , Core.Evaluate (Core.Symbol (SymbolId 0))
+            , Core.Evaluate (Core.Symbol symbol)
             ]
-            == Left (ReadBeforeInitialization (SymbolId 0)))
+            == Left (ReadBeforeInitialization symbol))
 
-    assert "Repeat body does not guarantee initialization"
-        (analyzeInitialization Set.empty
+    assert "Positive repeat guarantees runtime initialization"
+        (analyzeInitialization required uninitialized
             [ Core.Repeat
                 (Core.Constant (Core.IntegerLiteral 3))
-                [ Core.Assign (SymbolId 0)
+                [ Core.Assign symbol
                     (Core.NumericValue
                         (Core.Constant (Core.IntegerLiteral 1)))
                 ]
-            , Core.Evaluate (Core.Symbol (SymbolId 0))
+            , Core.Evaluate (Core.Symbol symbol)
             ]
-            == Left (ReadBeforeInitialization (SymbolId 0)))
+            == Right initialized)
 
-    assert "Initially initialized symbol can be read"
-        (analyzeInitialization (Set.singleton (SymbolId 0))
-            [ Core.Evaluate (Core.Symbol (SymbolId 0))]
-            == Right (Set.singleton (SymbolId 0)))
+    assert "Zero repeat does not initialize runtime symbol"
+        (analyzeInitialization required uninitialized
+            [ Core.Repeat
+                (Core.Constant (Core.IntegerLiteral 0))
+                [ Core.Assign symbol
+                    (Core.NumericValue
+                        (Core.Constant (Core.IntegerLiteral 1)))
+                ]
+            , Core.Evaluate (Core.Symbol symbol)
+            ]
+            == Left (ReadBeforeInitialization symbol))
+
+    assert "Zero repeat does not evaluate its body"
+        (analyzeInitialization required uninitialized
+            [ Core.Repeat
+                (Core.Constant (Core.IntegerLiteral 0))
+                [ Core.Evaluate (Core.Symbol symbol) ]
+            ]
+            == Right uninitialized)
+
+    assert "Positive repeat propagates initialization through both If branches"
+        (analyzeInitialization required uninitialized
+            [ Core.Repeat
+                (Core.Constant (Core.IntegerLiteral 2))
+                [ Core.If
+                    (Core.BooleanConstant True)
+                    [ Core.Assign symbol
+                        (Core.NumericValue
+                            (Core.Constant (Core.IntegerLiteral 1)))
+                    ]
+                    [ Core.Assign symbol
+                        (Core.NumericValue
+                            (Core.Constant (Core.IntegerLiteral 2)))
+                    ]
+                ]
+            , Core.Evaluate (Core.Symbol symbol)
+            ]
+            == Right initialized)
+
+    assert "Nested positive repeats propagate initialization"
+        (analyzeInitialization required uninitialized
+            [ Core.Repeat
+                (Core.Constant (Core.IntegerLiteral 2))
+                [ Core.Repeat
+                    (Core.Constant (Core.IntegerLiteral 3))
+                    [ Core.Assign symbol
+                        (Core.NumericValue
+                            (Core.Constant (Core.IntegerLiteral 1)))
+                    ]
+                ]
+            , Core.Evaluate (Core.Symbol symbol)
+            ]
+            == Right initialized)
+
+    assert "Initially initialized runtime symbol can be read"
+        (analyzeInitialization required initialized
+            [Core.Evaluate (Core.Symbol symbol)]
+            == Right initialized)
 
 main :: IO ()
 main = do
@@ -367,4 +476,5 @@ main = do
     testSemanticRules
     testControlFlowTypes
     testInitializationAnalysis
+    testCompilerInitialization
     putStrLn "\nAll regression tests passed."
