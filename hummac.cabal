@@ -14,6 +14,7 @@ extra-source-files:
 
 library
     exposed-modules:
+        InitializationAnalysis
         Compiler
         Evaluator
         ExpressionInference
@@ -43,6 +44,19 @@ library
 executable hummac
     main-is:             Main.hs
     hs-source-dirs:      app
+
+    build-depends:
+        base >=4.18 && <5,
+        hummac,
+        containers >=0.6
+
+    default-language:    Haskell2010
+    ghc-options:         -Wall
+
+test-suite hummac-test
+    type:                exitcode-stdio-1.0
+    main-is:             Main.hs
+    hs-source-dirs:      test
 
     build-depends:
         base >=4.18 && <5,

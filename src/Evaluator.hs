@@ -2,16 +2,10 @@
 -- SPDX-License-Identifier: Apache-2.0
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
--- you may not use this file except in compliance with the License.
+-- you may not use this license except in compliance with the License.
 -- You may obtain a copy of the License at
 --
 -- https://www.apache.org/licenses/LICENSE-2.0
---
--- Unless required by applicable law or agreed to in writing, software
--- distributed under the License is distributed on an "AS IS" BASIS,
--- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
--- See the License for the specific language governing permissions and
--- limitations under the License.
 
 module Evaluator where
 
@@ -29,6 +23,9 @@ evalExpression :: Environment -> Expression -> Either String Integer
 
 evalExpression _ (Number n) =
     Right n
+
+evalExpression _ (Decimal _) =
+    Left "The legacy evaluator does not support decimal expressions."
 
 evalExpression environment (VariableRef name) =
     lookupVariable name environment
@@ -54,6 +51,17 @@ evalExpression environment (Divide left right) = do
     if y == 0
         then Left "Division by zero."
         else Right (x `div` y)
+
+evalExpression environment (Power base powerExpression) = do
+    x <- evalExpression environment base
+    n <- evalExpression environment powerExpression
+    if n < 0
+        then Left "The legacy evaluator does not support negative integer exponents."
+        else Right (x ^ n)
+
+evalExpression environment (Negate operand) = do
+    value <- evalExpression environment operand
+    Right (negate value)
 
 updateEnvironment :: Variable -> Integer -> Environment -> Environment
 updateEnvironment name value environment =

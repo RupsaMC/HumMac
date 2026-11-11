@@ -1,0 +1,6 @@
+Repeat 0 times.
+    Set x to 1.
+End repeat.
+Repeat 12 times.
+    Set y to 2.
+End repeat.

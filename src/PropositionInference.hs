@@ -93,8 +93,8 @@ inferPropositionWithCounter firstFreshTypeVariable symbolTypes functions proposi
     infer next (Or left right) =
         inferLogical next left right
 
-    infer next (Not proposition) = do
-        (next1, result) <- infer next proposition
+    infer next (Not operand) = do
+        (next1, result) <- infer next operand
 
         Right (next1, PropositionResult
             { propositionType = BooleanType

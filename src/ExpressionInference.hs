@@ -119,8 +119,8 @@ inferExpressionWithCounter firstFreshTypeVariable symbolTypes functions expressi
                     symbolTypes
         in Right (next, ExpressionResult typ [] [])
 
-    infer next (Negate expression) = do
-        (next1, result) <- infer next expression
+    infer next (Negate operand) = do
+        (next1, result) <- infer next operand
 
         let typ = expressionType result
 
@@ -145,12 +145,12 @@ inferExpressionWithCounter firstFreshTypeVariable symbolTypes functions expressi
     infer next (Divide left right) =
         inferArithmetic next left right True
 
-    infer next (Power base exponent) = do
+    infer next (Power base powerExpression) = do
         (next1, baseResult) <- infer next base
-        (next2, exponentResult) <- infer next1 exponent
+        (next2, powerResult) <- infer next1 powerExpression
 
         let baseType = expressionType baseResult
-            exponentType = expressionType exponentResult
+            powerType = expressionType powerResult
 
         if not (isPotentiallyNumeric baseType)
             then Left (InvalidNumericOperands baseType baseType)
@@ -159,12 +159,12 @@ inferExpressionWithCounter firstFreshTypeVariable symbolTypes functions expressi
                     (next2, ExpressionResult
                         baseType
                         (typeConstraints baseResult
-                            ++ typeConstraints exponentResult
+                            ++ typeConstraints powerResult
                             ++ [ RequiresNumeric baseType
-                               , TypesEqual exponentType IntegerType
+                               , TypesEqual powerType IntegerType
                                ])
                         (pendingPromotions baseResult
-                            ++ pendingPromotions exponentResult))
+                            ++ pendingPromotions powerResult))
 
     infer next (FunctionCall functionId arguments) =
         case Map.lookup functionId functions of
@@ -261,8 +261,8 @@ inferExpressionWithCounter firstFreshTypeVariable symbolTypes functions expressi
     inferArguments next [] =
         Right (next, [])
 
-    inferArguments next (expression:rest) = do
-        (next1, result) <- infer next expression
+    inferArguments next (argument:rest) = do
+        (next1, result) <- infer next argument
         (next2, remaining) <- inferArguments next1 rest
         Right (next2, result : remaining)
 

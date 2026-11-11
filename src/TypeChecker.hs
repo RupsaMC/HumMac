@@ -6,13 +6,6 @@
 -- You may obtain a copy of the License at
 --
 -- https://www.apache.org/licenses/LICENSE-2.0
---
--- Unless required by applicable law or agreed to in writing, software
--- distributed under the License is distributed on an "AS IS" BASIS,
--- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
--- See the License for the specific language governing permissions and
--- limitations under the License.
-
 
 module TypeChecker where
 
@@ -21,6 +14,9 @@ import Syntax
 validateExpression :: [Variable] -> Expression -> Either String ()
 
 validateExpression _ (Number _) =
+    Right ()
+
+validateExpression _ (Decimal _) =
     Right ()
 
 validateExpression defined (VariableRef name)
@@ -42,6 +38,13 @@ validateExpression defined (Multiply left right) = do
 validateExpression defined (Divide left right) = do
     validateExpression defined left
     validateExpression defined right
+
+validateExpression defined (Power base powerExpression) = do
+    validateExpression defined base
+    validateExpression defined powerExpression
+
+validateExpression defined (Negate operand) =
+    validateExpression defined operand
 
 validateProgram :: Program -> Either String ()
 validateProgram = go []

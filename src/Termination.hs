@@ -6,13 +6,6 @@
 -- You may obtain a copy of the License at
 --
 -- https://www.apache.org/licenses/LICENSE-2.0
---
--- Unless required by applicable law or agreed to in writing, software
--- distributed under the License is distributed on an "AS IS" BASIS,
--- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
--- See the License for the specific language governing permissions and
--- limitations under the License.
-
 
 module Termination where
 
@@ -24,9 +17,9 @@ data TerminationCertificate = TerminationCertificate
     , terminationMeasure :: Integer
     } deriving (Show, Eq)
 
--- Count the nodes in an expression tree.
 expressionSize :: Expression -> Integer
 expressionSize (Number _) = 1
+expressionSize (Decimal _) = 1
 expressionSize (VariableRef _) = 1
 
 expressionSize (Add left right) =
@@ -41,7 +34,12 @@ expressionSize (Multiply left right) =
 expressionSize (Divide left right) =
     1 + expressionSize left + expressionSize right
 
--- Count instruction executions, including repetitions.
+expressionSize (Power base powerExpression) =
+    1 + expressionSize base + expressionSize powerExpression
+
+expressionSize (Negate operand) =
+    1 + expressionSize operand
+
 instructionExecutionCount :: Program -> Integer
 instructionExecutionCount =
     sum . map instructionExecutions
@@ -53,7 +51,6 @@ instructionExecutionCount =
         instructionExecutions (Repeat count body) =
             1 + count * instructionExecutionCount body
 
--- Count expression-node evaluations across all repetitions.
 programExpressionCount :: Program -> Integer
 programExpressionCount =
     sum . map expressionExecutions
@@ -67,8 +64,6 @@ programExpressionCount =
         expressionExecutions (Repeat count body) =
             count * programExpressionCount body
 
--- Verify that the program belongs to our
--- structurally terminating language.
 verifyProgram :: Program -> Either String TerminationCertificate
 verifyProgram program
     | not (allBoundsValid program) =
@@ -86,7 +81,6 @@ verifyProgram program
                 , terminationMeasure = measure
                 }
 
--- Check repetition bounds recursively.
 allBoundsValid :: Program -> Bool
 allBoundsValid =
     all validInstruction

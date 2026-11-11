@@ -6,19 +6,13 @@
 -- You may obtain a copy of the License at
 --
 -- https://www.apache.org/licenses/LICENSE-2.0
---
--- Unless required by applicable law or agreed to in writing, software
--- distributed under the License is distributed on an "AS IS" BASIS,
--- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
--- See the License for the specific language governing permissions and
--- limitations under the License.
-
 
 module Parser where
 
 import Syntax
 import Text.ParserCombinators.ReadP
 import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
+import Data.Ratio ((%))
 
 spaces :: ReadP ()
 spaces = skipMany (satisfy isSpace)
@@ -28,6 +22,12 @@ keyword word = do
     _ <- string word
     spaces
 
+symbol :: String -> ReadP String
+symbol value = do
+    result <- string value
+    spaces
+    return result
+
 identifier :: ReadP String
 identifier = do
     first <- satisfy isAlpha
@@ -35,16 +35,112 @@ identifier = do
     spaces
     return (first : rest)
 
+reservedWords :: [String]
+reservedWords =
+    [ "Set", "Add", "Multiply", "Subtract"
+    , "Repeat", "End", "repeat"
+    , "to", "and", "by", "from", "times"
+    ]
+
+expressionIdentifier :: ReadP String
+expressionIdentifier = do
+    name <- identifier
+    if name `elem` reservedWords
+        then pfail
+        else return name
+
 number :: ReadP Integer
 number = do
     digits <- munch1 isDigit
     spaces
     return (read digits)
 
+decimalNumber :: ReadP Expression
+decimalNumber = do
+    whole <- munch1 isDigit
+    _ <- char '.'
+    fractional <- munch1 isDigit
+    spaces
+
+    let numerator =
+            read whole * (10 ^ length fractional)
+            + read fractional
+
+        denominator = 10 ^ length fractional
+
+    return (Decimal (numerator % denominator))
+
+primary :: ReadP Expression
+primary =
+        decimalNumber
+    <++ (Number <$> number)
+    <++ between
+            (symbol "(")
+            (symbol ")")
+            expression
+    <++ (VariableRef <$> expressionIdentifier)
+
+unary :: ReadP Expression
+unary =
+        (do
+            _ <- symbol "-"
+            Negate <$> unary
+        )
+    <++ power
+
+power :: ReadP Expression
+power = do
+    base <- primary
+
+    (do
+        _ <- symbol "^"
+        powerExpression <- unary
+        return (Power base powerExpression)
+        )
+        <++ return base
+
+startsImplicitFactor :: String -> Bool
+startsImplicitFactor remaining =
+    case remaining of
+        '(' : _ ->
+            True
+
+        first : _
+            | isAlpha first ->
+                let name = takeWhile
+                        (\c -> isAlphaNum c || c == '_')
+                        remaining
+                in name `notElem` reservedWords
+
+        _ ->
+            False
+
+implicitMultiply :: ReadP (Expression -> Expression -> Expression)
+implicitMultiply = do
+    remaining <- look
+
+    if startsImplicitFactor remaining
+        then return Multiply
+        else pfail
+
+multiplicativeOperator
+    :: ReadP (Expression -> Expression -> Expression)
+multiplicativeOperator =
+        (symbol "*" >> return Multiply)
+    <++ (symbol "/" >> return Divide)
+    <++ implicitMultiply
+
+additiveOperator
+    :: ReadP (Expression -> Expression -> Expression)
+additiveOperator =
+        (symbol "+" >> return Add)
+    <++ (symbol "-" >> return Subtract)
+
 expression :: ReadP Expression
 expression =
-        (Number <$> number)
-    <++ (VariableRef <$> identifier)
+    chainl1
+        (chainl1 unary multiplicativeOperator)
+        additiveOperator
 
 setInstruction :: ReadP Instruction
 setInstruction = do
@@ -85,11 +181,11 @@ subtractInstruction = do
 repeatHeader :: ReadP Integer
 repeatHeader = do
     keyword "Repeat"
-    count <- number
+    repeatCount <- number
     keyword "times"
     optional (char '.')
     spaces
-    return count
+    return repeatCount
 
 endRepeat :: ReadP ()
 endRepeat = do
@@ -100,17 +196,32 @@ endRepeat = do
 
 parseComplete :: ReadP a -> String -> Maybe a
 parseComplete parser input =
-    case [result | (result, rest) <- readP_to_S (spaces *> parser <* spaces <* eof) input] of
-        [] -> Nothing
-        results -> Just (last results)
+    case
+        [ result
+        | (result, _) <-
+            readP_to_S (spaces *> parser <* spaces <* eof) input
+        ] of
+            [] ->
+                Nothing
+
+            results ->
+                Just (last results)
 
 parseInstruction :: String -> Either String Instruction
 parseInstruction input =
     case parseComplete
-        (setInstruction <++ addInstruction <++ multiplyInstruction <++ subtractInstruction)
+        ( setInstruction
+        <++ addInstruction
+        <++ multiplyInstruction
+        <++ subtractInstruction
+        )
         input of
-            Nothing -> Left "Could not parse instruction."
-            Just instruction -> Right instruction
+
+            Nothing ->
+                Left "Could not parse instruction."
+
+            Just instruction ->
+                Right instruction
 
 parseRepeatHeader :: String -> Maybe Integer
 parseRepeatHeader = parseComplete repeatHeader
@@ -124,7 +235,8 @@ isNegativeRepeatHeader line =
         ["Repeat", negativeCount, "times."] ->
             isNegativeInteger negativeCount
 
-        _ -> False
+        _ ->
+            False
 
 isNegativeInteger :: String -> Bool
 isNegativeInteger token =
@@ -132,15 +244,50 @@ isNegativeInteger token =
         '-':digits ->
             not (null digits) && all isDigit digits
 
-        _ -> False
+        _ ->
+            False
+
+isDecimalRepeatHeader :: String -> Bool
+isDecimalRepeatHeader line =
+    case words line of
+        ["Repeat", repeatCount, "times"] ->
+            isDecimalNumber repeatCount
+
+        ["Repeat", repeatCount, "times."] ->
+            isDecimalNumber repeatCount
+
+        _ ->
+            False
+
+isDecimalNumber :: String -> Bool
+isDecimalNumber token =
+    let unsigned =
+            case token of
+                '-':rest -> rest
+                '+':rest -> rest
+                _ -> token
+    in case break (== '.') unsigned of
+        (whole, '.':fraction) ->
+            not (null whole)
+                && not (null fraction)
+                && all isDigit whole
+                && all isDigit fraction
+
+        _ ->
+            False
 
 isEndRepeat :: String -> Bool
 isEndRepeat line =
     case parseComplete endRepeat line of
-        Just () -> True
-        Nothing -> False
+        Just () ->
+            True
 
-parseSequence :: [(Int, String)] -> Either String ([Instruction], [(Int, String)])
+        Nothing ->
+            False
+
+parseSequence
+    :: [(Int, String)]
+    -> Either String ([Instruction], [(Int, String)])
 parseSequence = go []
     where
         go accumulated [] =
@@ -150,25 +297,31 @@ parseSequence = go []
             | isEndRepeat line =
                 Right (reverse accumulated, remaining)
 
-            | Just count <- parseRepeatHeader line = do
+            | Just repeatCount <- parseRepeatHeader line = do
                 (body, afterBody) <- parseSequence rest
 
                 case afterBody of
                     (_, endLine):afterEnd
                         | isEndRepeat endLine ->
-                            go (Repeat count body : accumulated) afterEnd
+                            go
+                                (Repeat repeatCount body : accumulated)
+                                afterEnd
 
                     [] ->
-                        Left ("Line " ++ show lineNumber
-                            ++ ": Repeat block is missing 'End repeat.'")
+                        Left
+                            ("Line " ++ show lineNumber
+                                ++ ": Repeat block is missing 'End repeat.'")
 
                     _ ->
-                        Left ("Line " ++ show lineNumber
-                            ++ ": Invalid repeat block.")
+                        Left
+                            ("Line " ++ show lineNumber
+                                ++ ": Invalid repeat block.")
 
-            | isNegativeRepeatHeader line =
-                Left ("Line " ++ show lineNumber
-                    ++ ": Repeat count must be a non-negative integer.")
+            | isNegativeRepeatHeader line
+                || isDecimalRepeatHeader line =
+                Left
+                    ("Line " ++ show lineNumber
+                        ++ ": Repeat count must be a non-negative integer.")
 
             | otherwise =
                 case parseInstruction line of
@@ -181,6 +334,7 @@ parseSequence = go []
 parseProgram :: String -> Either String Program
 parseProgram input = do
     let numberedLines = zip [1..] (lines input)
+
         nonEmptyLines =
             filter (not . all isSpace . snd) numberedLines
 
@@ -191,5 +345,6 @@ parseProgram input = do
             Right program
 
         (lineNumber, _):_ ->
-            Left ("Line " ++ show lineNumber
-                ++ ": Unexpected 'End repeat.'")
+            Left
+                ("Line " ++ show lineNumber
+                    ++ ": Unexpected 'End repeat.'")
