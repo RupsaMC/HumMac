@@ -91,9 +91,18 @@ analyzeInstructions firstFreshTypeVariable initialEnvironment functions instruct
     (finalEnvironment, finalCounter, constraints, promotions) <-
         analyzeSequence firstFreshTypeVariable initialEnvironment instructions
 
+    let implicitBindingConstraints =
+            [ TypesEqual (implicitSymbolType symbol) typ
+            | (symbol, typ) <- Map.toList finalEnvironment
+            , Map.notMember symbol initialEnvironment
+            ]
+
+        allConstraints =
+            constraints ++ implicitBindingConstraints
+
     initialSolution <-
         either (Left . InstructionInferenceError) Right
-            (solveConstraints constraints)
+            (solveConstraints allConstraints)
 
     promotionSolution <-
         either (Left . InstructionPromotionError) Right
@@ -105,7 +114,7 @@ analyzeInstructions firstFreshTypeVariable initialEnvironment functions instruct
                 (substitution initialSolution)
 
         constraintsAfterPromotion =
-            map (applyConstraintSubstitution afterPromotion) constraints
+            map (applyConstraintSubstitution afterPromotion) allConstraints
 
     finalCheck <-
         either (Left . InstructionInferenceError) Right
@@ -299,18 +308,23 @@ analyzeInstructions firstFreshTypeVariable initialEnvironment functions instruct
 
 
     -- Reconcile a new assignment with the symbol's existing type.
+    --
+    -- For a previously unseen symbol, its implicit type binding is
+    -- deliberately deferred until the complete instruction sequence
+    -- has been analysed.
+    --
+    -- This allows conditional branches to infer their types separately.
+    -- The merged environment determines the final type, which is then
+    -- connected to the symbol's implicit type variable.
+    --
     -- Numeric assignments widen the stored type.
-    -- Unresolved types receive equality constraints.
     -- Incompatible concrete types are rejected.
 
     reconcileAssignmentType symbol environment newType =
         case Map.lookup symbol environment of
 
             Nothing ->
-                Right
-                    ( newType
-                    , [TypesEqual (implicitSymbolType symbol) newType]
-                    )
+                Right (newType, [])
 
             Just oldType ->
                 reconcileTypes symbol oldType newType
@@ -360,6 +374,7 @@ analyzeInstructions firstFreshTypeVariable initialEnvironment functions instruct
 
 
     -- Merge the types visible after the two conditional branches.
+    -- Numeric types are widened to their common wider type.
     -- Definite initialization is handled separately.
 
     mergeBranchEnvironments first second =
