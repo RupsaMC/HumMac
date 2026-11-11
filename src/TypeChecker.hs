@@ -58,9 +58,13 @@ validateProgram = go []
                     validateExpression defined expression
                     go defined rest
 
-                Repeat _ body -> do
-                    validateProgramWith defined body
-                    go defined rest
+                Repeat count body
+                    | count < 0 ->
+                        Left "Repeat count must be a non-negative integer."
+
+                    | otherwise -> do
+                        validateProgramWith defined body
+                        go defined rest
 
         validateProgramWith defined body =
             go defined body

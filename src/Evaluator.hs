@@ -62,34 +62,60 @@ updateEnvironment name value environment =
 evalInstruction
     :: Environment
     -> Instruction
-    -> Either String (Environment, Maybe Integer)
+    -> Either String (Environment, [Integer])
 
 evalInstruction environment (Assign name expression) = do
     value <- evalExpression environment expression
     let newEnvironment = updateEnvironment name value environment
-    Right (newEnvironment, Nothing)
+    Right (newEnvironment, [])
 
 evalInstruction environment (Print expression) = do
     value <- evalExpression environment expression
-    Right (environment, Just value)
+    Right (environment, [value])
+
+evalInstruction environment (Repeat count body)
+    | count < 0 =
+        Left "Repeat count must be a non-negative integer."
+
+    | otherwise =
+        evalRepeated count environment []
+    where
+        evalRepeated remaining currentEnvironment output
+            | remaining <= 0 =
+                Right (currentEnvironment, output)
+
+            | otherwise = do
+                (nextEnvironment, iterationOutput) <-
+                    evalInstructions currentEnvironment body
+
+                evalRepeated
+                    (remaining - 1)
+                    nextEnvironment
+                    (output ++ iterationOutput)
+
+evalInstructions
+    :: Environment
+    -> [Instruction]
+    -> Either String (Environment, [Integer])
+
+evalInstructions environment instructions =
+    go instructions environment []
+    where
+        go [] currentEnvironment output =
+            Right (currentEnvironment, output)
+
+        go (instruction:rest) currentEnvironment output = do
+            (newEnvironment, instructionOutput) <-
+                evalInstruction currentEnvironment instruction
+
+            go
+                rest
+                newEnvironment
+                (output ++ instructionOutput)
 
 evalProgram
     :: Program
     -> Either String (Environment, [Integer])
 
 evalProgram instructions =
-    go instructions [] []
-    where
-        go [] environment output =
-            Right (environment, output)
-
-        go (instruction:rest) environment output = do
-            (newEnvironment, result) <-
-                evalInstruction environment instruction
-
-            let newOutput =
-                    case result of
-                        Nothing -> output
-                        Just value -> output ++ [value]
-
-            go rest newEnvironment newOutput
+    evalInstructions [] instructions

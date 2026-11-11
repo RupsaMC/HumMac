@@ -115,6 +115,25 @@ parseInstruction input =
 parseRepeatHeader :: String -> Maybe Integer
 parseRepeatHeader = parseComplete repeatHeader
 
+isNegativeRepeatHeader :: String -> Bool
+isNegativeRepeatHeader line =
+    case words line of
+        ["Repeat", negativeCount, "times"] ->
+            isNegativeInteger negativeCount
+
+        ["Repeat", negativeCount, "times."] ->
+            isNegativeInteger negativeCount
+
+        _ -> False
+
+isNegativeInteger :: String -> Bool
+isNegativeInteger token =
+    case token of
+        '-':digits ->
+            not (null digits) && all isDigit digits
+
+        _ -> False
+
 isEndRepeat :: String -> Bool
 isEndRepeat line =
     case parseComplete endRepeat line of
@@ -146,6 +165,10 @@ parseSequence = go []
                     _ ->
                         Left ("Line " ++ show lineNumber
                             ++ ": Invalid repeat block.")
+
+            | isNegativeRepeatHeader line =
+                Left ("Line " ++ show lineNumber
+                    ++ ": Repeat count must be a non-negative integer.")
 
             | otherwise =
                 case parseInstruction line of

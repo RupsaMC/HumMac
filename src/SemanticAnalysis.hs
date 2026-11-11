@@ -194,6 +194,10 @@ applyConstraintSubstitution subst constraint =
                 (applyTypeSubstitution subst first)
                 (applyTypeSubstitution subst second)
 
+        RequiresInteger typ ->
+            RequiresInteger
+                (applyTypeSubstitution subst typ)
+
         RequiresNumeric typ ->
             RequiresNumeric
                 (applyTypeSubstitution subst typ)
