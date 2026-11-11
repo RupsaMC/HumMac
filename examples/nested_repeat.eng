@@ -1,0 +1,7 @@
+Set total to 0.
+Repeat 2 times.
+    Set x to 10.
+    Repeat 3 times.
+        Add x and 1.
+    End repeat.
+End repeat.
